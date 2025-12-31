@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(8) NOT NULL,
+    email VARCHAR(26) UNIQUE NOT NULL,
+    password VARCHAR(65) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT (now() AT TIME ZONE 'Europe/Moscow')
+);

@@ -1,0 +1,43 @@
+basePath: /
+definitions:
+  auth.DtoReqAuthorization:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: API built with fasthttp
+  title: FastHTTP API
+  version: "1.0"
+paths:
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: User login
+      parameters:
+      - description: Login payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/auth.DtoReqAuthorization'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            type: string
+        "401":
+          description: error
+          schema:
+            type: string
+      summary: Login
+      tags:
+      - Auth
+swagger: "2.0"
