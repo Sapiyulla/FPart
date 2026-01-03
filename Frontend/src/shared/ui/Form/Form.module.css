@@ -1,5 +1,5 @@
 .form {
-    background-color:ghostwhite;
+    background-color: ghostwhite;
     position: fixed;
     right: 50%;
     bottom: 50%;
@@ -18,24 +18,29 @@
 }
 
 .input {
-    border-radius: 10px;
+    font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+    border-radius: 6px;
     height: 25px;
+    width: 250px;
     padding: 10px;
-    border: 1px solid black;
-    font-size: larger;
+    border: 0;
+    font-size: medium;
     outline: none;
+    box-shadow: 1px 1px 1px gray;
 }
 
 .input:invalid {
-    border: 1px solid red;
+    box-shadow: 1px 1px 1px red;
 }
 
 .input_label {
     margin-top: 10px;
-    font-size: 12px;
+    font-size: 15px;
+    color: grey;
     letter-spacing: 0.5px;
     text-align: center;
-    margin-right: 100px;
+    margin-right: -150px;
+    margin-bottom: 10px;
 }
 
 .button_zone {
@@ -45,25 +50,18 @@
     justify-content: space-evenly;
 }
 
-.button_zone > button {
-    padding: 3px 6px 3px 6px;
-    width: 70px;
-    font-size: large;
-    font-weight: 500;
+.button_zone>button {
+    padding: 4px 6px 4px 6px;
+    width: 80px;
+    font-size: medium;
+    font-weight: 700;
     border: 0;
-    border-radius: 5px;
-}
-
-.button_zone > button:hover {
-    opacity: 0.8;
-}
-
-.button_zone > button[type="reset"] {
+    border-radius: 8px;
     color: white;
-    background-color: brown;
+    background-color: royalblue;
 }
 
-.button_zone > button[type="submit"] {
-    color: white;
-    background-color:royalblue;
+.button_zone>button:hover {
+    transform: translateY(-1px);
+    background-color: darkslateblue;
 }

@@ -2,5 +2,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Устанавливаем зависимости только если их нет
-CMD ["sh", "-c", "npm install && npm run dev"]
+COPY package.json package-lock.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
