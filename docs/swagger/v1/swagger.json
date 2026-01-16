@@ -1,0 +1,373 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Versioned API",
+        "description": "API with path-based versioning",
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "url": "/api/v1"
+        }
+    ],
+    "tags": [
+        {
+            "name": "User",
+            "description": "User management"
+        },
+        {
+            "name": "Project",
+            "description": "Project management"
+        }
+    ],
+    "paths": {
+        "/users": {
+            "post": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Create user",
+                "operationId": "createUser",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "User created"
+                    },
+                    "409": {
+                        "description": "User already exists"
+                    }
+                }
+            }
+        },
+        "/users/{userId}": {
+            "get": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get user info",
+                "operationId": "getUserInfo",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User info",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "content": {
+                            "text/plain;charset=utf-8": {
+                                "example": "user with id={userId} not found"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{userId}/projects": {
+            "get": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get user projects",
+                "operationId": "getUserProjects",
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of projects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Project"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "content": {
+                            "text/plain;charset=utf-8": {
+                                "example": "user with id={userId} not found"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/projects": {
+            "post": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Create project",
+                "operationId": "createProject",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateProjectRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Project created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectIdResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/projects/{projectId}": {
+            "get": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Get project info",
+                "operationId": "getProjectInfo",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Project info",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Project"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Project not found",
+                        "content": {
+                            "text/plain;charset=utf-8": {
+                                "example": "project with id={projectId} not found"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Delete project",
+                "operationId": "deleteProject",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Project deleted"
+                    },
+                    "404": {
+                        "description": "Project not found",
+                        "content": {
+                            "text/plain;charset=utf-8": {
+                                "example": "project with id={projectId} not found"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/projects/{projectId}/users": {
+            "post": {
+                "tags": [
+                    "Project"
+                ],
+                "summary": "Add user to project",
+                "operationId": "addUserToProject",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AddUserToProjectRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "User added to project"
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "content": {
+                            "text/plain;charset=utf-8": {
+                                "example": "user with id={userId} not found"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "User": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "fullname",
+                    "photo_url"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "fullname": {
+                        "type": "string"
+                    },
+                    "photo_url": {
+                        "type": "string"
+                    }
+                }
+            },
+            "Project": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "author_id"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "author_id": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateUserRequest": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "fullname",
+                    "photo_url"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "fullname": {
+                        "type": "string"
+                    },
+                    "photo_url": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateProjectRequest": {
+                "type": "object",
+                "required": [
+                    "user_id",
+                    "name"
+                ],
+                "properties": {
+                    "user_id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                }
+            },
+            "AddUserToProjectRequest": {
+                "type": "object",
+                "required": [
+                    "user_id"
+                ],
+                "properties": {
+                    "user_id": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ProjectIdResponse": {
+                "type": "object",
+                "required": [
+                    "project_id"
+                ],
+                "properties": {
+                    "project_id": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}
