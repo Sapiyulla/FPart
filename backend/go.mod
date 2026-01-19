@@ -4,6 +4,7 @@ go 1.25.5
 
 require (
 	github.com/fasthttp/router v1.5.4
+	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/joho/godotenv v1.5.1
 	github.com/rs/zerolog v1.34.0
 	github.com/valyala/fasthttp v1.69.0

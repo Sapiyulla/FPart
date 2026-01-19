@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fpart/internal/application/auth/usecase"
 	"fpart/internal/application/ports"
 
@@ -13,6 +14,7 @@ type AuthService struct {
 }
 
 func NewAuthService(
+	ctx context.Context,
 	oauthCfg *oauth2.Config,
 	tokenService ports.TokenService,
 	userRepo ports.UserRepository,
@@ -20,13 +22,11 @@ func NewAuthService(
 ) *AuthService {
 	return &AuthService{
 		usecase.NewGoogleLoginUseCase(
+			ctx,
 			oauthCfg,
 			tokenService,
 			userRepo,
-			func(l *zerolog.Logger) *zerolog.Logger {
-				Logger := l.With().Str("service", "auth").Logger()
-				return &Logger
-			}(logger),
+			*logger,
 		),
 	}
 }
