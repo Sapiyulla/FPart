@@ -1,7 +1,13 @@
 package main
 
-import "log"
+import (
+	"github.com/rs/zerolog"
+)
+
+var (
+	SystemLogger zerolog.Logger
+)
 
 func main() {
-	log.Println("docker run")
+
 }
