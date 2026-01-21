@@ -18,6 +18,9 @@ import (
 type Metrics struct {
 	StatesDeletedCount uint32 `json:"deleted_states_count"`
 	StatesAddedCount   uint32 `json:"added_states_count"`
+
+	LoginedUsers          uint32 `json:"succesfully_login_users"`
+	LoginedErrorProcesses uint32 `json:"error_login_processes"`
 }
 
 type jsonUser struct {
@@ -67,97 +70,92 @@ func NewGoogleLoginUseCase(
 		Metrics: Metrics{},
 	}
 	go googleUseCase.stateStorageCleaner(ctx)
-	if googleUseCase.logger.GetLevel() == zerolog.DebugLevel {
-		go func(ctx context.Context) {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					time.Sleep(30 * time.Second)
-					logger.Debug().
-						Uint32("deleted_states_count", googleUseCase.Metrics.StatesDeletedCount).
-						Uint32("added_states_count", googleUseCase.Metrics.StatesAddedCount).
-						Msg("metrics loaded")
-				}
-			}
-		}(ctx)
-	}
 	return googleUseCase
 }
 
 func (uc *GoogleLoginUseCase) GetRedirectURL() string {
 	randState := rand.Text()[:12]
-	if uc.logger.GetLevel() == zerolog.DebugLevel {
-		uc.logger.Debug().Str("state", randState).Msg("new state generated")
-	}
+	uc.logger.Debug().Msg("new oauth state generated")
+
 	uc.mu.Lock()
 	defer uc.mu.Unlock()
-	uc.stateMap[randState] = time.Now().Add(5 * time.Minute)
+	uc.stateMap[randState] = time.Now().Add(3 * time.Minute)
 	atomic.AddUint32(&uc.Metrics.StatesAddedCount, 1)
-	if uc.logger.GetLevel() == zerolog.DebugLevel {
-		uc.logger.Debug().Str("state", randState).Msg("state added to states storage")
-	}
+
 	return uc.oauth2Cfg.AuthCodeURL(randState, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 }
 
 func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code string) (string, error) {
 	uc.mu.Lock()
 	defer uc.mu.Unlock()
-	if uc.logger.GetLevel() == zerolog.DebugLevel {
-		uc.logger.Debug().Str("state", state).Msg("state from user")
-	}
-	if _, ok := uc.stateMap[state]; !ok {
-		if uc.logger.GetLevel() == zerolog.DebugLevel {
-			uc.logger.Debug().Bool("found", ok).Msg("state not equal with execute state")
-		}
+
+	if ttl, ok := uc.stateMap[state]; !ok {
+		uc.logger.Debug().Str("op", "prepare_callback").Msg("state not equal with execute state")
+		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
+		return "", ErrInvalidState
+	} else if ttl.Before(time.Now()) {
+		uc.logger.Debug().Str("op", "prepare_callback").Msg("state expired")
+		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
 		return "", ErrInvalidState
 	}
-	if uc.logger.GetLevel() == zerolog.DebugLevel {
-		uc.logger.Debug().Bool("found", true).Msg("state valid")
-	}
+
 	delete(uc.stateMap, state)
 	atomic.AddUint32(&uc.Metrics.StatesDeletedCount, 1)
-	if uc.logger.GetLevel() == zerolog.DebugLevel {
-		uc.logger.Debug().Str("state", state).Msg("state succesfully deleted")
-	}
 
 	token, err := uc.oauth2Cfg.Exchange(ctx, code, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 	if err != nil {
-		uc.logger.Error().Err(err).Msg(ErrInvalidExchange.Error())
+		uc.logger.Error().
+			Err(err).
+			Str("op", "prepare_callback").
+			Msg(ErrInvalidExchange.Error())
+		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
 		return "", ErrGetUserInfo
 	}
 
 	resp, err := uc.oauth2Cfg.Client(ctx, token).Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		uc.logger.Error().Err(err).Msg(ErrGetUserInfo.Error())
+		uc.logger.Error().
+			Err(err).
+			Str("op", "prepare_callback").
+			Msg(ErrGetUserInfo.Error())
+		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
 		return "", ErrGetUserInfo
 	}
 	defer resp.Body.Close()
 
 	var JsonUser jsonUser
 	if err := json.NewDecoder(resp.Body).Decode(&JsonUser); err != nil {
-		uc.logger.Error().Err(err).Msg(ErrJsonDecodeError.Error())
+		uc.logger.Error().
+			Err(err).
+			Str("op", "prepare_callback").
+			Msg(ErrJsonDecodeError.Error())
+		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
 		return "", ErrGetUserInfo
 	}
 
 	Token, err := uc.tokenService.Generate(JsonUser.ID)
 	if err != nil {
-		uc.logger.Error().Err(err).Msg("token generate error")
+		uc.logger.Error().
+			Err(err).
+			Str("op", "prepare_callback").
+			Msg("token generate error")
+		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
 		return "", ErrGetUserInfo
 	}
 
 	if err := uc.userRepository.AddNewUser(user.NewUser(
 		JsonUser.ID, JsonUser.Fullname, JsonUser.Email, JsonUser.Picture,
 	)); err != nil {
-		uc.logger.Error().Err(err).Msg("user save to repository error")
+		uc.logger.Error().
+			Err(err).
+			Str("op", "prepare_callback").
+			Msg("save user to repository")
+		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
 		return "", ErrGetUserInfo
 	}
 
-	if uc.logger.GetLevel() == zerolog.DebugLevel {
-		uc.logger.Debug().Str("token", Token).Msg("logined to service")
-	}
-
+	uc.logger.Debug().Msg("logined to service")
+	atomic.AddUint32(&uc.Metrics.LoginedUsers, 1)
 	return Token, nil
 }
 
@@ -175,10 +173,10 @@ func (uc *GoogleLoginUseCase) stateStorageCleaner(ctx context.Context) {
 				}
 				if ttl.Before(time.Now()) {
 					delete(uc.stateMap, state)
+					uc.logger.Trace().
+						Str("component", "state_cleaner").
+						Msg("expired oauth state removed")
 					atomic.AddUint32(&uc.Metrics.StatesDeletedCount, 1)
-					if uc.logger.GetLevel() == zerolog.DebugLevel {
-						uc.logger.Debug().Str("state", state).Msg("expired state deleted")
-					}
 				}
 			}
 			uc.mu.Unlock()

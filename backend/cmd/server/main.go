@@ -42,6 +42,21 @@ func init() {
 		},
 		Endpoint: google.Endpoint,
 	}
+
+	if Logger.GetLevel() == zerolog.DebugLevel {
+		status := func(condition bool) string {
+			if !condition {
+				return "not loaded"
+			}
+			return "loaded"
+		}
+		envLogger := Logger.With().Str("type", "env").Logger()
+		envLogger.Debug().Str("token_secret", status(TokenSecret != "")).Msg("token secret load state")
+
+		envLogger.Debug().Str("google_client_secret", status(OAuth2Cfg.ClientSecret != "")).Msg("client secret load state")
+		envLogger.Debug().Str("google_client_id", OAuth2Cfg.ClientID).Msg("client id load state")
+		envLogger.Debug().Str("google_redirect_uri", OAuth2Cfg.RedirectURL).Msg("Redirect URI load state")
+	}
 }
 
 func main() {
