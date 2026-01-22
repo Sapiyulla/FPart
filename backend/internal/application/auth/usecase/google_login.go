@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fpart/internal/application/ports"
 	"fpart/internal/domain/user"
+	"fpart/internal/pkg/errs"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,8 +38,9 @@ var (
 	ErrJsonDecodeError error = errors.New("json decoding error")
 )
 
+var oauth2Cfg *oauth2.Config
+
 type GoogleLoginUseCase struct {
-	oauth2Cfg      *oauth2.Config
 	tokenService   ports.TokenService
 	userRepository ports.UserRepository
 
@@ -57,8 +59,8 @@ func NewGoogleLoginUseCase(
 	userRepo ports.UserRepository,
 	logger zerolog.Logger,
 ) *GoogleLoginUseCase {
+	oauth2Cfg = cfg
 	googleUseCase := &GoogleLoginUseCase{
-		oauth2Cfg:      cfg,
 		tokenService:   tokenService,
 		userRepository: userRepo,
 
@@ -73,6 +75,10 @@ func NewGoogleLoginUseCase(
 	return googleUseCase
 }
 
+// # RedirectURL
+//
+// This function returns only the path to the callback endpoint.
+// It is required to be called before processing user data for user authorization.
 func (uc *GoogleLoginUseCase) GetRedirectURL() string {
 	randState := rand.Text()[:12]
 	uc.logger.Debug().Msg("new oauth state generated")
@@ -82,44 +88,53 @@ func (uc *GoogleLoginUseCase) GetRedirectURL() string {
 	uc.stateMap[randState] = time.Now().Add(3 * time.Minute)
 	atomic.AddUint32(&uc.Metrics.StatesAddedCount, 1)
 
-	return uc.oauth2Cfg.AuthCodeURL(randState, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	return oauth2Cfg.AuthCodeURL(randState, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 }
 
+// # Callback (Google)
+//
+// This function processes user data after the user has verified their Google account.
+// It receives state and code as input, which are used to verify and retrieve user information using the Google API.
+//
+// Returned error(s):
+//   - [ErrGetUserInfo]
+//   - [user.ErrUserAlreadyExists] (domain/user)
+//   - [errs.InternalError] (pkg/errs)
 func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code string) (string, error) {
 	uc.mu.Lock()
 	defer uc.mu.Unlock()
 
 	if ttl, ok := uc.stateMap[state]; !ok {
-		uc.logger.Debug().Str("op", "prepare_callback").Msg("state not equal with execute state")
+		uc.logger.Debug().Str("op", "prepare_callback").Msg(ErrInvalidState.Error())
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", ErrInvalidState
+		return "", ErrGetUserInfo
 	} else if ttl.Before(time.Now()) {
 		uc.logger.Debug().Str("op", "prepare_callback").Msg("state expired")
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", ErrInvalidState
+		return "", ErrGetUserInfo
 	}
 
 	delete(uc.stateMap, state)
 	atomic.AddUint32(&uc.Metrics.StatesDeletedCount, 1)
 
-	token, err := uc.oauth2Cfg.Exchange(ctx, code, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	googleToken, err := oauth2Cfg.Exchange(ctx, code, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 	if err != nil {
 		uc.logger.Error().
 			Err(err).
 			Str("op", "prepare_callback").
 			Msg(ErrInvalidExchange.Error())
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", ErrGetUserInfo
+		return "", &errs.InternalError{}
 	}
 
-	resp, err := uc.oauth2Cfg.Client(ctx, token).Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	resp, err := oauth2Cfg.Client(ctx, googleToken).Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
 		uc.logger.Error().
 			Err(err).
 			Str("op", "prepare_callback").
 			Msg(ErrGetUserInfo.Error())
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", ErrGetUserInfo
+		return "", &errs.InternalError{}
 	}
 	defer resp.Body.Close()
 
@@ -130,10 +145,10 @@ func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code s
 			Str("op", "prepare_callback").
 			Msg(ErrJsonDecodeError.Error())
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", ErrGetUserInfo
+		return "", &errs.InternalError{}
 	}
 
-	Token, err := uc.tokenService.Generate(JsonUser.ID)
+	token, err := uc.tokenService.Generate(JsonUser.ID)
 	if err != nil {
 		uc.logger.Error().
 			Err(err).
@@ -149,14 +164,14 @@ func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code s
 		uc.logger.Error().
 			Err(err).
 			Str("op", "prepare_callback").
-			Msg("save user to repository")
+			Msg("user save error")
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", ErrGetUserInfo
+		return "", err
 	}
 
 	uc.logger.Debug().Msg("logined to service")
 	atomic.AddUint32(&uc.Metrics.LoginedUsers, 1)
-	return Token, nil
+	return token, nil
 }
 
 func (uc *GoogleLoginUseCase) stateStorageCleaner(ctx context.Context) {

@@ -8,6 +8,7 @@ import (
 	"fpart/internal/infra/secure"
 	"fpart/internal/pkg/utils"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,10 +25,19 @@ var (
 	OAuth2Cfg *oauth2.Config
 
 	TokenSecret string
+
+	Mode string
 )
 
 func init() {
-	Logger = zerolog.New(os.Stdout).With().Timestamp().Logger().Level(zerolog.DebugLevel)
+	Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+
+	Mode = os.Getenv("MODE")
+	if strings.Contains(strings.ToLower(Mode), "prod") {
+		Logger = Logger.Level(zerolog.InfoLevel)
+	} else {
+		Logger = Logger.Level(zerolog.DebugLevel)
+	}
 
 	TokenSecret = os.Getenv("TOKEN_SECRET")
 
@@ -42,21 +52,6 @@ func init() {
 		},
 		Endpoint: google.Endpoint,
 	}
-
-	if Logger.GetLevel() == zerolog.DebugLevel {
-		status := func(condition bool) string {
-			if !condition {
-				return "not loaded"
-			}
-			return "loaded"
-		}
-		envLogger := Logger.With().Str("type", "env").Logger()
-		envLogger.Debug().Str("token_secret", status(TokenSecret != "")).Msg("token secret load state")
-
-		envLogger.Debug().Str("google_client_secret", status(OAuth2Cfg.ClientSecret != "")).Msg("client secret load state")
-		envLogger.Debug().Str("google_client_id", OAuth2Cfg.ClientID).Msg("client id load state")
-		envLogger.Debug().Str("google_redirect_uri", OAuth2Cfg.RedirectURL).Msg("Redirect URI load state")
-	}
 }
 
 func main() {
@@ -64,7 +59,7 @@ func main() {
 	defer cancel()
 
 	userRepo := userRepo.NewUserLStorageRepository()
-	tokenService := secure.NewJWTokenService(TokenSecret) // need replace on secret.txt source read
+	tokenService := secure.NewJWTokenService(TokenSecret, 90*24*time.Hour) // need replace on secret.txt source read
 
 	// auth module
 	authService := authService.NewAuthService(
