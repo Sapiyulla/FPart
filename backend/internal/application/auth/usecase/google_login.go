@@ -3,11 +3,9 @@ package usecase
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fpart/internal/application/ports"
-	"fpart/internal/domain/user"
-	"fpart/internal/pkg/errs"
+	"fpart/internal/infra/secure"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,31 +36,37 @@ var (
 	ErrJsonDecodeError error = errors.New("json decoding error")
 )
 
-var oauth2Cfg *oauth2.Config
-
 type GoogleLoginUseCase struct {
 	tokenService   ports.TokenService
 	userRepository ports.UserRepository
+	oauth2Provider ports.OAuth2Provider
+
+	cfg *oauth2.Config
 
 	logger zerolog.Logger
 
-	stateMap map[string]time.Time
-	mu       sync.Mutex
+	stateMap      map[string]time.Time
+	cleanInterval time.Duration
+	mu            sync.Mutex
 
 	Metrics Metrics
 }
 
 func NewGoogleLoginUseCase(
 	ctx context.Context,
-	cfg *oauth2.Config,
+	oauth2Cfg *oauth2.Config,
 	tokenService ports.TokenService,
 	userRepo ports.UserRepository,
 	logger zerolog.Logger,
 ) *GoogleLoginUseCase {
-	oauth2Cfg = cfg
 	googleUseCase := &GoogleLoginUseCase{
 		tokenService:   tokenService,
 		userRepository: userRepo,
+		oauth2Provider: secure.NewOAuth2Provider(oauth2Cfg),
+
+		cfg: oauth2Cfg,
+
+		cleanInterval: 30 * time.Second,
 
 		logger: logger.With().Str("usecase", "google_login").Logger(),
 
@@ -71,6 +75,7 @@ func NewGoogleLoginUseCase(
 
 		Metrics: Metrics{},
 	}
+
 	go googleUseCase.stateStorageCleaner(ctx)
 	return googleUseCase
 }
@@ -88,7 +93,7 @@ func (uc *GoogleLoginUseCase) GetRedirectURL() string {
 	uc.stateMap[randState] = time.Now().Add(3 * time.Minute)
 	atomic.AddUint32(&uc.Metrics.StatesAddedCount, 1)
 
-	return oauth2Cfg.AuthCodeURL(randState, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	return uc.cfg.AuthCodeURL(randState, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 }
 
 // # Callback (Google)
@@ -117,38 +122,17 @@ func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code s
 	delete(uc.stateMap, state)
 	atomic.AddUint32(&uc.Metrics.StatesDeletedCount, 1)
 
-	googleToken, err := oauth2Cfg.Exchange(ctx, code, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
-	if err != nil {
-		uc.logger.Error().
-			Err(err).
-			Str("op", "prepare_callback").
-			Msg(ErrInvalidExchange.Error())
-		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", &errs.InternalError{}
-	}
-
-	resp, err := oauth2Cfg.Client(ctx, googleToken).Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	user, err := uc.oauth2Provider.GetUserInfoByCode(ctx, code)
 	if err != nil {
 		uc.logger.Error().
 			Err(err).
 			Str("op", "prepare_callback").
 			Msg(ErrGetUserInfo.Error())
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", &errs.InternalError{}
-	}
-	defer resp.Body.Close()
-
-	var JsonUser jsonUser
-	if err := json.NewDecoder(resp.Body).Decode(&JsonUser); err != nil {
-		uc.logger.Error().
-			Err(err).
-			Str("op", "prepare_callback").
-			Msg(ErrJsonDecodeError.Error())
-		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", &errs.InternalError{}
+		return "", ErrGetUserInfo
 	}
 
-	token, err := uc.tokenService.Generate(JsonUser.ID)
+	token, err := uc.tokenService.Generate(user.GetID())
 	if err != nil {
 		uc.logger.Error().
 			Err(err).
@@ -158,9 +142,7 @@ func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code s
 		return "", ErrGetUserInfo
 	}
 
-	if err := uc.userRepository.AddNewUser(user.NewUser(
-		JsonUser.ID, JsonUser.Fullname, JsonUser.Email, JsonUser.Picture,
-	)); err != nil {
+	if err := uc.userRepository.AddNewUser(user); err != nil {
 		uc.logger.Error().
 			Err(err).
 			Str("op", "prepare_callback").
@@ -180,7 +162,7 @@ func (uc *GoogleLoginUseCase) stateStorageCleaner(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			time.Sleep(30 * time.Second)
+			time.Sleep(uc.cleanInterval)
 			uc.mu.Lock()
 			for state, ttl := range uc.stateMap {
 				if ctx.Err() != nil {
