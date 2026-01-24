@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	authService "fpart/internal/application/auth"
 	authHandler "fpart/internal/infra/http/auth"
+	"fpart/internal/infra/http/middleware"
 	userRepo "fpart/internal/infra/repository/user"
 	"fpart/internal/infra/secure"
 	"fpart/internal/pkg/utils"
@@ -27,6 +29,11 @@ var (
 	TokenSecret string
 
 	Mode string
+
+	routes map[string]string = map[string]string{
+		"google-login":    "/api/v1/auth/google/login",
+		"google-callback": "/api/v1/auth/google/callback",
+	}
 )
 
 func init() {
@@ -58,13 +65,19 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	userRepo := userRepo.NewUserLStorageRepository()
+	userRepository := userRepo.NewUserLStorageRepository()
 	tokenService := secure.NewJWTokenService(TokenSecret, 90*24*time.Hour) // need replace on secret.txt source read
+
+	// middleware
+	middleware := middleware.NewMiddleware(tokenService,
+		routes["google-login"],
+		routes["google-callback"],
+	)
 
 	// auth module
 	authService := authService.NewAuthService(
 		ctx,
-		OAuth2Cfg, tokenService, userRepo, &Logger,
+		OAuth2Cfg, tokenService, userRepository, &Logger,
 	)
 	authHandler := authHandler.NewAuthHandler(*authService, utils.HandlerOpts{
 		RequestTimeout: 5 * time.Second,
@@ -78,6 +91,44 @@ func main() {
 			auth.GET("/google/login", authHandler.LoginWithGoogleHandler)
 			auth.GET("/google/callback", authHandler.LoginWithGoogleCallback)
 		}
+		APIv1.GET("/user", func(ctx *fasthttp.RequestCtx) {
+			user_id := string(ctx.URI().QueryArgs().Peek("userId"))
+			if user_id == "" {
+				user_id = string(ctx.Request.Header.Peek("User-ID"))
+			}
+			user, err := userRepository.GetUserByID(user_id)
+			if err != nil {
+				switch err {
+				case userRepo.ErrUserNotFound:
+					ctx.SetStatusCode(fasthttp.StatusNotFound)
+				default:
+					ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+				}
+				return
+			}
+			var jsonUserResponse struct {
+				ID         string `json:"id"`
+				Fullname   string `json:"fullname"`
+				Email      string `json:"email"`
+				PictureSrc string `json:"picture"`
+			} = struct {
+				ID         string "json:\"id\""
+				Fullname   string "json:\"fullname\""
+				Email      string "json:\"email\""
+				PictureSrc string "json:\"picture\""
+			}{
+				ID:         user.GetID(),
+				Email:      user.GetEmail(),
+				Fullname:   user.GetFullname(),
+				PictureSrc: user.GetPhotoURL(),
+			}
+			respBody, _ := json.Marshal(jsonUserResponse)
+			ctx.SetBody(respBody)
+		})
+		user := APIv1.Group("/user")
+		{
+			user.GET("/{userId}/projects", func(ctx *fasthttp.RequestCtx) {})
+		}
 	}
 
 	if Logger.GetLevel() == zerolog.DebugLevel {
@@ -89,7 +140,7 @@ func main() {
 	}
 
 	srv := fasthttp.Server{
-		Handler:               r.Handler,
+		Handler:               middleware.Handler(r.Handler),
 		NoDefaultServerHeader: true,
 	}
 

@@ -13,6 +13,12 @@ type AuthService struct {
 	*usecase.GoogleLoginUseCase
 }
 
+var (
+	ErrGetUserInfo       error = usecase.ErrGetUserInfo
+	ErrInternalService   error = usecase.ErrInternalService
+	ErrUserAlreadyExists error = usecase.ErrUserAlreadyExists
+)
+
 func NewAuthService(
 	ctx context.Context,
 	oauthCfg *oauth2.Config,

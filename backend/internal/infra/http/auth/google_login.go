@@ -41,14 +41,24 @@ func (h *AuthHandler) LoginWithGoogleCallback(c *fasthttp.RequestCtx) {
 	defer cancel()
 	token, err := h.authService.PrepareCallback(ctx, string(state), string(code))
 	if err != nil {
-		c.SetStatusCode(fasthttp.StatusInternalServerError)
+		switch err {
+		case auth.ErrGetUserInfo:
+			c.SetStatusCode(fasthttp.StatusInternalServerError)
+		case auth.ErrUserAlreadyExists:
+			c.SetStatusCode(fasthttp.StatusNotFound)
+		case auth.ErrInternalService:
+			c.SetStatusCode(fasthttp.StatusInternalServerError)
+		}
 		c.SetBodyString(err.Error())
 		return
 	}
 	cookie := fasthttp.AcquireCookie()
+	defer fasthttp.ReleaseCookie(cookie)
 	cookie.SetHTTPOnly(true)
+	cookie.SetPath("/api")
 	cookie.SetKey("token")
 	cookie.SetValue(token)
 	cookie.SetMaxAge(90 * 24 * 60 * 60)
-	defer fasthttp.ReleaseCookie(cookie)
+
+	c.Response.Header.SetCookie(cookie)
 }

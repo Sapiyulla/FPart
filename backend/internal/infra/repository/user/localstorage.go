@@ -11,6 +11,10 @@ type UserLocalStorageRepository struct {
 	mu sync.Mutex
 }
 
+var (
+	ErrUserNotFound error = user.ErrUserNotFound
+)
+
 func NewUserLStorageRepository() *UserLocalStorageRepository {
 	return &UserLocalStorageRepository{
 		storage: map[string]user.User{},

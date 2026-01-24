@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"errors"
 	"fpart/internal/application/ports"
+	"fpart/internal/domain/user"
 	"fpart/internal/infra/secure"
+	"fpart/internal/pkg/errs"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,10 +32,12 @@ type jsonUser struct {
 }
 
 var (
-	ErrInvalidState    error = errors.New("invalid state: not equal")
-	ErrInvalidExchange error = errors.New("invalid exchange operation")
-	ErrGetUserInfo     error = errors.New("get user info error")
-	ErrJsonDecodeError error = errors.New("json decoding error")
+	ErrInvalidState      error = errors.New("invalid state: not equal")
+	ErrInvalidExchange   error = errors.New("invalid exchange operation")
+	ErrGetUserInfo       error = errors.New("get user info error")
+	ErrJsonDecodeError   error = errors.New("json decoding error")
+	ErrInternalService   error = &errs.InternalError{}
+	ErrUserAlreadyExists error = user.ErrUserAlreadyExists
 )
 
 type GoogleLoginUseCase struct {
@@ -103,8 +107,8 @@ func (uc *GoogleLoginUseCase) GetRedirectURL() string {
 //
 // Returned error(s):
 //   - [ErrGetUserInfo]
-//   - [user.ErrUserAlreadyExists] (domain/user)
-//   - [errs.InternalError] (pkg/errs)
+//   - [ErrUserAlreadyExists]
+//   - [InternalError]
 func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code string) (string, error) {
 	uc.mu.Lock()
 	defer uc.mu.Unlock()
@@ -129,7 +133,7 @@ func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code s
 			Str("op", "prepare_callback").
 			Msg(ErrGetUserInfo.Error())
 		atomic.AddUint32(&uc.Metrics.LoginedErrorProcesses, 1)
-		return "", ErrGetUserInfo
+		return "", &errs.InternalError{}
 	}
 
 	token, err := uc.tokenService.Generate(user.GetID())
