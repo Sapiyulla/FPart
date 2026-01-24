@@ -32,7 +32,7 @@ func NewAuthService(
 			oauthCfg,
 			tokenService,
 			userRepo,
-			*logger,
+			logger.With().Str("service", "auth").Logger(),
 		),
 	}
 }

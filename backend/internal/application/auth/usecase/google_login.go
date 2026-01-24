@@ -24,13 +24,6 @@ type Metrics struct {
 	LoginedErrorProcesses uint32 `json:"error_login_processes"`
 }
 
-type jsonUser struct {
-	ID       string `json:"id"`
-	Fullname string `json:"name"`
-	Email    string `json:"email"`
-	Picture  string `json:"picture"`
-}
-
 var (
 	ErrInvalidState      error = errors.New("invalid state: not equal")
 	ErrInvalidExchange   error = errors.New("invalid exchange operation")
@@ -90,7 +83,9 @@ func NewGoogleLoginUseCase(
 // It is required to be called before processing user data for user authorization.
 func (uc *GoogleLoginUseCase) GetRedirectURL() string {
 	randState := rand.Text()[:12]
-	uc.logger.Debug().Msg("new oauth state generated")
+	uc.logger.Debug().
+		Str("op", "get_redirect_url").
+		Msg("new oauth state generated")
 
 	uc.mu.Lock()
 	defer uc.mu.Unlock()
@@ -155,7 +150,9 @@ func (uc *GoogleLoginUseCase) PrepareCallback(ctx context.Context, state, code s
 		return "", err
 	}
 
-	uc.logger.Debug().Msg("logined to service")
+	uc.logger.Debug().
+		Str("op", "prepare_callback").
+		Msg("logined to service")
 	atomic.AddUint32(&uc.Metrics.LoginedUsers, 1)
 	return token, nil
 }

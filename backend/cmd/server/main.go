@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	authService "fpart/internal/application/auth"
+	userService "fpart/internal/application/user"
 	authHandler "fpart/internal/infra/http/auth"
 	"fpart/internal/infra/http/middleware"
+	userHandler "fpart/internal/infra/http/user"
 	userRepo "fpart/internal/infra/repository/user"
 	"fpart/internal/infra/secure"
 	"fpart/internal/pkg/utils"
@@ -83,6 +84,10 @@ func main() {
 		RequestTimeout: 5 * time.Second,
 	})
 
+	// user module
+	userService := userService.NewUserService(&Logger, userRepository)
+	userHandler := userHandler.NewUserHandler(userService)
+
 	r := router.New()
 	APIv1 := r.Group("/api/v1")
 	{
@@ -91,40 +96,7 @@ func main() {
 			auth.GET("/google/login", authHandler.LoginWithGoogleHandler)
 			auth.GET("/google/callback", authHandler.LoginWithGoogleCallback)
 		}
-		APIv1.GET("/user", func(ctx *fasthttp.RequestCtx) {
-			user_id := string(ctx.URI().QueryArgs().Peek("userId"))
-			if user_id == "" {
-				user_id = string(ctx.Request.Header.Peek("User-ID"))
-			}
-			user, err := userRepository.GetUserByID(user_id)
-			if err != nil {
-				switch err {
-				case userRepo.ErrUserNotFound:
-					ctx.SetStatusCode(fasthttp.StatusNotFound)
-				default:
-					ctx.SetStatusCode(fasthttp.StatusInternalServerError)
-				}
-				return
-			}
-			var jsonUserResponse struct {
-				ID         string `json:"id"`
-				Fullname   string `json:"fullname"`
-				Email      string `json:"email"`
-				PictureSrc string `json:"picture"`
-			} = struct {
-				ID         string "json:\"id\""
-				Fullname   string "json:\"fullname\""
-				Email      string "json:\"email\""
-				PictureSrc string "json:\"picture\""
-			}{
-				ID:         user.GetID(),
-				Email:      user.GetEmail(),
-				Fullname:   user.GetFullname(),
-				PictureSrc: user.GetPhotoURL(),
-			}
-			respBody, _ := json.Marshal(jsonUserResponse)
-			ctx.SetBody(respBody)
-		})
+		APIv1.GET("/user", userHandler.GetUserHandler)
 		user := APIv1.Group("/user")
 		{
 			user.GET("/{userId}/projects", func(ctx *fasthttp.RequestCtx) {})
